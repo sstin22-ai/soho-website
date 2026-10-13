@@ -1,0 +1,5 @@
+{
+  "functions": {
+    "api/intake.js": { "maxDuration": 300 }
+  }
+}
