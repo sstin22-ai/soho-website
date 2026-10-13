@@ -1,6 +1,7 @@
 {
   "functions": {
     "api/intake.js": { "maxDuration": 300 },
-    "api/redesign.js": { "maxDuration": 300 }
+    "api/redesign.js": { "maxDuration": 300 },
+    "api/build.js": { "maxDuration": 300 }
   }
 }
