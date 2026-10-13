@@ -241,7 +241,13 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error(`intake failed at ${step}`, err);
-    const hint = /Supabase 401|Supabase 403|Invalid API key|JWT/i.test(String(err.message)) ? 'KEY' : /fetch failed|ENOTFOUND|Invalid URL/i.test(String(err.message)) ? 'URL' : 'DB';
-    return res.status(500).json({ error: `Something went wrong (code ${step}-${hint}). Please email hello@sohomediahouse.com.` });
+    const msg = String(err.message || err);
+    const hint = /Supabase 401|Supabase 403|Invalid API key|JWT/i.test(msg) ? 'KEY' : /fetch failed|ENOTFOUND|Invalid URL/i.test(msg) ? 'URL' : 'DB';
+    // Diagnostics: key TYPE and length only (never the key itself), the project ref, and Supabase's own reason
+    const keyType = SUPABASE_KEY.startsWith('eyJ') ? 'legacy-jwt' : SUPABASE_KEY.startsWith('sb_secret_') ? 'secret' : SUPABASE_KEY.startsWith('sb_publishable_') ? 'PUBLISHABLE(wrong)' : 'unknown';
+    let ref = 'unknown';
+    try { ref = new URL(SUPABASE_URL).hostname.split('.')[0]; } catch {}
+    const reason = msg.replace(/sb_[a-z]+_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9._-]+/g, '[key]').slice(0, 220);
+    return res.status(500).json({ error: `Something went wrong (code ${step}-${hint}). Please email hello@sohomediahouse.com. [project=${ref} key=${keyType} len=${SUPABASE_KEY.length} | ${reason}]` });
   }
 }
