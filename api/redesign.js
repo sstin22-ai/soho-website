@@ -1,7 +1,7 @@
 // SoHo Media House — redesign request
 // POST { id, t, base: 'fresh'|'a'|'b'|'c', feedback, inspiration } → new round of 3 concepts emailed to team
 import { waitUntil } from '@vercel/functions';
-import { sb, updateRow, sendEmail, runDesignRound, missingEnv, clean, esc, REPLY_INBOX } from './_lib/design.js';
+import { sb, updateRow, sendEmail, runDesignRound, missingEnv, clean, esc, deliveryDate, REPLY_INBOX } from './_lib/design.js';
 
 const MAX_ROUNDS = 5; // caps cost per client
 
@@ -41,13 +41,13 @@ export default async function handler(req, res) {
         <h2 style="margin:0 0 12px">Got it, ${esc(lead.first_name)} — round ${round} is in the studio.</h2>
         <p style="font-size:15px;line-height:1.7">We're designing three fresh concepts for ${esc(lead.business_name || 'your brand')} based on your notes:</p>
         <p style="font-size:14px;line-height:1.7;background:#fff3ee;padding:10px 12px;border-radius:8px">${esc(feedback)}</p>
-        <p style="font-size:15px;line-height:1.7">You'll hear from us within 24 hours.</p>
+        <p style="font-size:15px;line-height:1.7">Expect your new concepts by <b>${deliveryDate()}</b> — within 48 hours. If that lands on a Sunday or federal holiday, it rolls to the next business day.</p>
         <p style="font-size:15px;margin-top:24px">— The SoHo Media House team</p>
       </div>`
     }).catch((e) => console.error('redesign confirmation failed', e));
 
     waitUntil(runDesignRound(lead, { round, feedback, baseDirection: baseMockup ? baseMockup.direction : null }));
-    return res.status(200).json({ ok: true, round });
+    return res.status(200).json({ ok: true, round, eta: deliveryDate() });
   } catch (err) {
     console.error('redesign failed', String(err.message || err).replace(/sb_[a-z]+_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9._-]+/g, '[key]'));
     return res.status(500).json({ error: 'Something went wrong. Please email hello@sohomediahouse.com.' });
