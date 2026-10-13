@@ -413,21 +413,30 @@ html,body{height:100%;font-family:'Segoe UI',sans-serif;background:#0a0a0f;color
   <div class="sec-body" style="display:flex;align-items:flex-start;justify-content:center">
     <div style="max-width:540px;width:100%">
       <div id="cForm">
-        <div style="font-size:12px;color:rgba(255,255,255,0.4);letter-spacing:1px;text-transform:uppercase;margin-bottom:24px">Tell us about your project — proposal within 24 hours</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.4);letter-spacing:1px;text-transform:uppercase;margin-bottom:24px">Tell us about your project — 3 custom design concepts + proposal within 24 hours</div>
         <div style="display:flex;gap:12px;margin-bottom:12px">
           <input id="cfn" style="flex:1;background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif" placeholder="First name"/>
           <input id="cln" style="flex:1;background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif" placeholder="Last name"/>
         </div>
         <div style="display:flex;flex-direction:column;gap:12px">
           <input id="cbiz" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif" placeholder="Business name"/>
-          <input id="cemail" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif" placeholder="Email address"/>
+          <input id="cemail" type="email" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif" placeholder="Email address"/>
+          <input id="cphone" type="tel" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif" placeholder="Phone (optional)"/>
+          <input id="cweb" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif" placeholder="Current website (optional)"/>
+          <input id="chp" name="company_site" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0"/>
           <select id="csvc" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:rgba(255,255,255,0.6);font-size:13px;outline:none;font-family:'Segoe UI',sans-serif">
             <option value="">I need...</option>
             <option>A new website</option><option>Social media management</option>
             <option>Website + Social</option><option>AI blog + auto-post</option>
             <option>Full Pro package</option><option>Site refresh</option><option>Not sure yet</option>
           </select>
-          <textarea id="cgoals" rows="4" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif;resize:vertical" placeholder="Tell us about your business and goals..."></textarea>
+          <select id="cstyle" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:rgba(255,255,255,0.6);font-size:13px;outline:none;font-family:'Segoe UI',sans-serif">
+            <option value="">Style I love...</option>
+            <option>Modern &amp; minimal</option><option>Bold &amp; colorful</option><option>Luxury &amp; elegant</option>
+            <option>Warm &amp; friendly</option><option>Corporate &amp; professional</option><option>Playful &amp; fun</option><option>Surprise me</option>
+          </select>
+          <input id="ccolors" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif" placeholder="Brand colors (optional) e.g. navy &amp; gold"/>
+          <textarea id="cgoals" rows="4" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif;resize:vertical" placeholder="Tell us about your business, who you serve, and what you want your site to do..."></textarea>
           <button class="cta-primary" id="cFormBtn" style="border-radius:10px;width:100%;padding:15px">Send My Project Brief</button>
           <div style="font-size:11px;color:rgba(255,255,255,0.25);text-align:center;letter-spacing:1px">hello@sohomediahouse.com · Clarksville, TN · Nashville, TN</div>
         </div>
@@ -435,7 +444,7 @@ html,body{height:100%;font-family:'Segoe UI',sans-serif;background:#0a0a0f;color
       <div id="cSuccess" style="display:none;text-align:center;padding:48px 0">
         <div style="font-size:48px;margin-bottom:16px">🎉</div>
         <div style="font-family:Georgia,serif;font-size:26px;font-weight:500;margin-bottom:10px">We got it!</div>
-        <div style="font-size:14px;color:rgba(255,255,255,0.45);line-height:1.8;max-width:380px;margin:0 auto">Thanks for reaching out. Custom proposal within 24 hours.</div>
+        <div style="font-size:14px;color:rgba(255,255,255,0.45);line-height:1.8;max-width:380px;margin:0 auto">Check your inbox for a confirmation. We're designing 3 custom concepts for you now — concepts and proposal within 24 hours.</div>
         <button class="cta-secondary" id="cSuccessBtn" style="margin-top:24px;border-radius:10px">Back to Home</button>
       </div>
     </div>
@@ -538,11 +547,27 @@ document.getElementById('priceCta').addEventListener('click', function(){ goPage
 document.getElementById('priceBack').addEventListener('click', function(){ goPage('hero'); });
 // contact
 document.getElementById('cFormBtn').addEventListener('click', function(){
-  var fn = document.getElementById('cfn').value;
-  var em = document.getElementById('cemail').value;
-  if (!fn || !em) { alert('Please fill in your name and email'); return; }
-  document.getElementById('cForm').style.display = 'none';
-  document.getElementById('cSuccess').style.display = 'block';
+  var btn = this;
+  var v = function(id){ return (document.getElementById(id).value || '').trim(); };
+  var payload = {
+    first_name: v('cfn'), last_name: v('cln'), business_name: v('cbiz'), email: v('cemail'),
+    phone: v('cphone'), current_website: v('cweb'), service: v('csvc'), style: v('cstyle'),
+    brand_colors: v('ccolors'), goals: v('cgoals'), company_site: v('chp')
+  };
+  if (!payload.first_name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) { alert('Please enter your name and a valid email'); return; }
+  if (btn.disabled) return;
+  btn.disabled = true; var label = btn.textContent; btn.textContent = 'Sending...'; btn.style.opacity = '0.6';
+  fetch('/api/intake', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); })
+    .then(function(x){
+      if (!x.ok) throw new Error((x.d && x.d.error) || 'Submission failed');
+      document.getElementById('cForm').style.display = 'none';
+      document.getElementById('cSuccess').style.display = 'block';
+    })
+    .catch(function(e){
+      alert(e.message || 'Something went wrong. Please email hello@sohomediahouse.com');
+      btn.disabled = false; btn.textContent = label; btn.style.opacity = '';
+    });
 });
 document.getElementById('cSuccessBtn').addEventListener('click', function(){ goPage('hero'); });
 document.getElementById('contactBack').addEventListener('click', function(){ goPage('hero'); });
