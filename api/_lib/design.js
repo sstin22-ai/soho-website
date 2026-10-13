@@ -85,7 +85,7 @@ async function claude({ system, user, maxTokens }) {
   if (!r.ok) throw new Error(`Claude ${r.status}: ${await r.text()}`);
   const data = await r.json();
   const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-  return { text, stop: data.stop_reason };
+  return { text, stop: data.stop_reason, usage: data.usage || {} };
 }
 
 function briefBlock(lead) {
@@ -130,7 +130,7 @@ ${baseDirection ? `The client wants to build on this earlier direction: ${JSON.s
 }
 
 // Step 2 — build one concept
-async function build(lead, dir, label, feedback, attempt = 1, startedAt = Date.now()) {
+async function build(lead, dir, label, feedback, lean = false) {
   const system = `You are a senior creative developer at SoHo Media House building an award-level homepage concept. Quality bar: Awwwards Site of the Day. This mockup must win the client's business.
 ${UNTRUSTED}
 ${IP_RULE}
@@ -148,14 +148,15 @@ Craft requirements:
 - Add a small fixed corner badge: "${label} · Concept by SoHo Media House".`;
   const user = `${briefBlock(lead)}
 ${feedback ? `<client_feedback>${feedback}</client_feedback>` : ''}
-<art_direction>${JSON.stringify(dir)}</art_direction>${attempt > 1 ? '\nIMPORTANT: your previous attempt was too long and got cut off. Make this version tighter and simpler while keeping the quality.' : ''}`;
-  const { text, stop } = await claude({ system, user, maxTokens: 20000 });
+<art_direction>${JSON.stringify(dir)}</art_direction>${lean ? `
+LEAN MODE — your previous attempt ran far too long and was cut off. This time: at most 2 inline SVG illustrations, each with no more than 15 elements; never repeat or loop shapes; no code comments; keep total output under 22 KB. Keep the art direction's palette, fonts, layout idea, and copy quality.` : ''}`;
+  const { text, stop, usage } = await claude({ system, user, maxTokens: lean ? 14000 : 20000 });
   const html = text.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
   const complete = stop !== 'max_tokens' && /<html[\s>]/i.test(html) && /<\/html>\s*$/i.test(html);
   if (!complete) {
-    // Retry only if there's time left inside this function's 300s window
-    if (attempt < 2 && Date.now() - startedAt < 110000) return build(lead, dir, label, feedback, attempt + 1, startedAt);
-    throw new Error(`${label}: cut off before finishing (stop_reason=${stop})`);
+    const e = new Error(`${label}: cut off before finishing (stop_reason=${stop}, out_tokens=${usage.output_tokens}, chars=${html.length}, tail=${JSON.stringify(html.slice(-160))})`);
+    e.cutOff = true;
+    throw e;
   }
   return html;
 }
@@ -211,14 +212,26 @@ export async function startDesignRound(lead, { round = 1, feedback = '', baseDir
 }
 
 // Step B — build one concept (called by /api/build)
-export async function buildConcept(id, round, key) {
+export async function buildConcept(id, round, key, attempt = 1) {
   const [lead] = await sb(`intake_submissions?select=*&id=eq.${id}`, { method: 'GET' });
   const [concept] = await sb(`intake_concepts?select=*&submission_id=eq.${id}&round=eq.${round}&key=eq.${key}`, { method: 'GET' });
   if (!lead || !concept || concept.status !== 'building') return;
   try {
-    const html = await build(lead, concept.direction, concept.name, feedbackFor(lead, round));
+    const html = await build(lead, concept.direction, concept.name, feedbackFor(lead, round), attempt > 1);
     await sb(`intake_concepts?id=eq.${concept.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'done', html, error: null }) });
   } catch (e) {
+    if (e.cutOff && attempt === 1) {
+      // Hand off to a FRESH function call (new 300s window) for a lean rebuild
+      await sb(`intake_concepts?id=eq.${concept.id}`, { method: 'PATCH', body: JSON.stringify({ error: 'attempt 1: ' + String(e.message).slice(0, 900) }) });
+      try {
+        const r = await fetch(`${SITE}/api/build`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, t: lead.redesign_token, round, key, attempt: 2 })
+        });
+        if (r.ok) return;
+      } catch {}
+    }
     await sb(`intake_concepts?id=eq.${concept.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'failed', error: String(e.message || e).slice(0, 1000) }) });
   }
   await maybeFinishRound(id, round);
