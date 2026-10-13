@@ -80,8 +80,8 @@ async function claude({ system, user, maxTokens, think = true }) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    // Sonnet 5.x thinks by default and that thinking eats the output budget — builds turn it off so every token goes to the page
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }], ...(think ? {} : { thinking: { type: 'disabled' } }) })
+    // Sonnet 5.5 thinks by default and that thinking eats the output budget. 'between_tools' is this model's "no thinking before responding" mode, so every token goes to the page
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }], ...(think ? {} : { thinking: { type: 'between_tools' } }) })
   });
   if (!r.ok) throw new Error(`Claude ${r.status}: ${await r.text()}`);
   const data = await r.json();
