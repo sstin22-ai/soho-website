@@ -2,13 +2,16 @@
 // Submit → save to Supabase → client confirmation email → (background) Claude builds 3 mockups → emailed to hello@
 import { waitUntil } from '@vercel/functions';
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-const RESEND_KEY = process.env.RESEND_API_KEY;
+const env = (k) => (process.env[k] || '').trim();
+const SUPABASE_URL = env('SUPABASE_URL').replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
+const SUPABASE_KEY = env('SUPABASE_SERVICE_ROLE_KEY');
+const ANTHROPIC_KEY = env('ANTHROPIC_API_KEY');
+const RESEND_KEY = env('RESEND_API_KEY');
+const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ANTHROPIC_API_KEY', 'RESEND_API_KEY'];
 
 const FROM = 'SoHo Media House <hello@sohomediahouse.com>';
-const TEAM_INBOX = 'hello@sohomediahouse.com';
+const TEAM_INBOX = ['hello@sohomediahouse.com', 'corevest2@gmail.com']; // primary + backup
+const REPLY_INBOX = 'hello@sohomediahouse.com';
 const MODEL = 'claude-sonnet-5-5';
 const MAX_PER_IP_PER_HOUR = 3;
 
@@ -28,7 +31,8 @@ async function sb(path, opts = {}) {
     ...opts,
     headers: {
       apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
+      // Legacy service_role keys are JWTs (eyJ...); new sb_secret_ keys go in apikey only
+      ...(SUPABASE_KEY.startsWith('eyJ') ? { Authorization: `Bearer ${SUPABASE_KEY}` } : {}),
       'Content-Type': 'application/json',
       Prefer: 'return=representation',
       ...(opts.headers || {})
@@ -117,7 +121,7 @@ async function buildAndDeliverMockups(lead) {
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'client';
 
     await sendEmail({
-      to: [TEAM_INBOX],
+      to: TEAM_INBOX,
       reply_to: lead.email,
       subject: `🎨 ${mockups.length} mockups ready — ${lead.business_name || lead.first_name + ' ' + lead.last_name}`,
       html: `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:600px">
@@ -153,7 +157,7 @@ async function buildAndDeliverMockups(lead) {
     console.error('mockup pipeline failed', err);
     await updateRow(lead.id, { status: 'failed', error: String(err.message || err).slice(0, 2000) }).catch(() => {});
     await sendEmail({
-      to: [TEAM_INBOX],
+      to: TEAM_INBOX,
       subject: `⚠️ Mockup generation failed — ${lead.business_name || lead.email}`,
       html: `<p>The intake was saved but mockups failed.</p><p>Submission ID: ${lead.id}<br>Client: ${esc(lead.email)}</p><pre>${esc(String(err.message || err))}</pre>`
     }).catch(() => {});
@@ -163,6 +167,13 @@ async function buildAndDeliverMockups(lead) {
 // ---------- handler ----------
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Config check — reports missing variable NAMES only, never values
+  const missing = REQUIRED_ENV.filter((k) => !env(k));
+  if (missing.length) {
+    console.error('Missing env vars:', missing);
+    return res.status(500).json({ error: `Setup issue (code CFG): missing ${missing.join(', ')}. Please email hello@sohomediahouse.com.` });
+  }
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
 
@@ -187,6 +198,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Please enter your name and a valid email.' });
   }
 
+  let step = 'RATE';
   try {
     // Abuse guard: each submission spends API credits
     if (lead.ip) {
@@ -200,6 +212,7 @@ export default async function handler(req, res) {
       }
     }
 
+    step = 'SAVE';
     const [row] = await sb('intake_submissions', { method: 'POST', body: JSON.stringify(lead) });
     lead.id = row.id;
 
@@ -207,7 +220,7 @@ export default async function handler(req, res) {
     try {
       await sendEmail({
         to: [lead.email],
-        reply_to: TEAM_INBOX,
+        reply_to: REPLY_INBOX,
         subject: `We've got your project brief, ${lead.first_name}`,
         html: `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px;color:#111">
           <h2 style="margin:0 0 12px">Thanks, ${esc(lead.first_name)} — your brief is in.</h2>
@@ -227,7 +240,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ ok: true });
   } catch (err) {
-    console.error('intake failed', err);
-    return res.status(500).json({ error: 'Something went wrong — please email hello@sohomediahouse.com.' });
+    console.error(`intake failed at ${step}`, err);
+    const hint = /Supabase 401|Supabase 403|Invalid API key|JWT/i.test(String(err.message)) ? 'KEY' : /fetch failed|ENOTFOUND|Invalid URL/i.test(String(err.message)) ? 'URL' : 'DB';
+    return res.status(500).json({ error: `Something went wrong (code ${step}-${hint}). Please email hello@sohomediahouse.com.` });
   }
 }
