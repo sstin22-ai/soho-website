@@ -1,7 +1,7 @@
 // SoHo Media House — intake form
 // Submit → save to Supabase → client confirmation → (background) art direction + 3 concepts → emailed to team
 import { waitUntil } from '@vercel/functions';
-import { sb, updateRow, sendEmail, runDesignRound, missingEnv, clean, esc, deliveryDate, SUPABASE_KEY, SUPABASE_URL, REPLY_INBOX } from './_lib/design.js';
+import { sb, updateRow, sendEmail, startDesignRound, missingEnv, clean, esc, deliveryDate, SUPABASE_KEY, SUPABASE_URL, REPLY_INBOX } from './_lib/design.js';
 
 const MAX_PER_IP_PER_HOUR = 3;
 const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
@@ -69,7 +69,7 @@ export default async function handler(req, res) {
       console.error('confirmation email failed', e);
     }
 
-    waitUntil(runDesignRound(lead, { round: 1 }));
+    waitUntil(startDesignRound(lead, { round: 1 }));
     return res.status(200).json({ ok: true });
   } catch (err) {
     const msg = String(err.message || err);
