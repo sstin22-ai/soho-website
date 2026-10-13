@@ -59,7 +59,10 @@ export async function sb(path, opts = {}) {
   return text ? JSON.parse(text) : null;
 }
 export const updateRow = (id, fields) =>
-  sb(`intake_submissions?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify(fields) });
+  sb(`intake_submissions?id=eq.${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(fields.status ? { ...fields, status_at: new Date().toISOString() } : fields)
+  });
 
 // ---------- Resend ----------
 export async function sendEmail(payload) {
@@ -127,7 +130,7 @@ ${baseDirection ? `The client wants to build on this earlier direction: ${JSON.s
 }
 
 // Step 2 — build one concept
-async function build(lead, dir, label, feedback, attempt = 1) {
+async function build(lead, dir, label, feedback, attempt = 1, startedAt = Date.now()) {
   const system = `You are a senior creative developer at SoHo Media House building an award-level homepage concept. Quality bar: Awwwards Site of the Day. This mockup must win the client's business.
 ${UNTRUSTED}
 ${IP_RULE}
@@ -146,45 +149,111 @@ Craft requirements:
   const user = `${briefBlock(lead)}
 ${feedback ? `<client_feedback>${feedback}</client_feedback>` : ''}
 <art_direction>${JSON.stringify(dir)}</art_direction>${attempt > 1 ? '\nIMPORTANT: your previous attempt was too long and got cut off. Make this version tighter and simpler while keeping the quality.' : ''}`;
-  const { text, stop } = await claude({ system, user, maxTokens: 22000 });
+  const { text, stop } = await claude({ system, user, maxTokens: 16000 });
   const html = text.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
   const complete = stop !== 'max_tokens' && /<html[\s>]/i.test(html) && /<\/html>\s*$/i.test(html);
   if (!complete) {
-    if (attempt < 2) return build(lead, dir, label, feedback, attempt + 1);
+    // Retry only if there's time left inside this function's 300s window
+    if (attempt < 2 && Date.now() - startedAt < 110000) return build(lead, dir, label, feedback, attempt + 1, startedAt);
     throw new Error(`${label}: cut off before finishing (stop_reason=${stop})`);
   }
   return html;
 }
 
-// Full pipeline: art direction → 3 builds → email team → save
-export async function runDesignRound(lead, { round = 1, feedback = '', baseDirection = null } = {}) {
-  try {
-    await updateRow(lead.id, { status: round > 1 ? `redesigning_r${round}` : 'generating' });
-    const directions = await artDirect(lead, feedback, baseDirection);
-    const letters = ['A', 'B', 'C'];
-    const results = await Promise.allSettled(
-      directions.map((d, i) => build(lead, d, `Concept ${letters[i]} — ${d.name}`, feedback))
-    );
-    const mockups = [];
-    const failures = [];
-    results.forEach((res, i) => {
-      const name = `Concept ${letters[i]} — ${directions[i].name}`;
-      if (res.status === 'fulfilled') mockups.push({ key: letters[i].toLowerCase(), name, direction: directions[i], html: res.value });
-      else failures.push(`${name}: ${res.reason?.message || res.reason}`);
-    });
-    if (!mockups.length) throw new Error(failures.join(' | '));
 
+// ================= Pipeline =================
+// Each concept builds in its OWN function call (own 300s window), so 3 rich concepts never hit the time limit.
+const LETTERS = ['a', 'b', 'c'];
+const labelFor = (key, dir) => `Concept ${key.toUpperCase()} — ${dir?.name || ''}`.trim();
+const feedbackFor = (lead, round) => {
+  const r = (lead.revisions || []).filter((x) => x.round === round).pop();
+  return r ? r.feedback : '';
+};
+
+async function failRound(lead, round, err) {
+  console.error('design round failed', err);
+  await updateRow(lead.id, { status: `failed_r${round}`, error: String(err.message || err).slice(0, 2000) }).catch(() => {});
+  await sendEmail({
+    to: TEAM_INBOX,
+    subject: `⚠️ Concept generation failed — ${lead.business_name || lead.email} (round ${round})`,
+    html: `<p>The brief was saved but concepts failed.</p><p>Submission ID: ${lead.id}<br>Client: ${esc(lead.email)}</p><pre>${esc(String(err.message || err))}</pre>`
+  }).catch(() => {});
+}
+
+// Step A — art direction, then fan out 3 builds
+export async function startDesignRound(lead, { round = 1, feedback = '', baseDirection = null } = {}) {
+  try {
+    await updateRow(lead.id, { status: `directing_r${round}` });
+    const directions = await artDirect(lead, feedback, baseDirection);
+    await sb(`intake_concepts?submission_id=eq.${lead.id}&round=eq.${round}`, { method: 'DELETE' });
+    await sb('intake_concepts', {
+      method: 'POST',
+      body: JSON.stringify(directions.map((d, i) => ({ submission_id: lead.id, round, key: LETTERS[i], name: labelFor(LETTERS[i], d), direction: d, status: 'building' })))
+    });
+    await updateRow(lead.id, { status: `building_r${round}`, directions });
+
+    await Promise.all(LETTERS.map(async (key) => {
+      try {
+        const r = await fetch(`${SITE}/api/build`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: lead.id, t: lead.redesign_token, round, key })
+        });
+        if (!r.ok) throw new Error(`build trigger ${r.status}`);
+      } catch (e) {
+        await sb(`intake_concepts?submission_id=eq.${lead.id}&round=eq.${round}&key=eq.${key}`, { method: 'PATCH', body: JSON.stringify({ status: 'failed', error: String(e.message || e) }) });
+        await maybeFinishRound(lead.id, round);
+      }
+    }));
+  } catch (err) {
+    await failRound(lead, round, err);
+  }
+}
+
+// Step B — build one concept (called by /api/build)
+export async function buildConcept(id, round, key) {
+  const [lead] = await sb(`intake_submissions?select=*&id=eq.${id}`, { method: 'GET' });
+  const [concept] = await sb(`intake_concepts?select=*&submission_id=eq.${id}&round=eq.${round}&key=eq.${key}`, { method: 'GET' });
+  if (!lead || !concept || concept.status !== 'building') return;
+  try {
+    const html = await build(lead, concept.direction, concept.name, feedbackFor(lead, round));
+    await sb(`intake_concepts?id=eq.${concept.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'done', html, error: null }) });
+  } catch (e) {
+    await sb(`intake_concepts?id=eq.${concept.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'failed', error: String(e.message || e).slice(0, 1000) }) });
+  }
+  await maybeFinishRound(id, round);
+}
+
+// Step C — when all 3 are finished, exactly one caller sends the email
+export async function maybeFinishRound(id, round) {
+  const concepts = await sb(`intake_concepts?select=*&submission_id=eq.${id}&round=eq.${round}&order=key.asc`, { method: 'GET' });
+  if (!concepts.length || concepts.some((c) => c.status === 'building')) return;
+
+  // Atomic claim: only the call that flips building → sending continues
+  const claimed = await sb(`intake_submissions?id=eq.${id}&status=eq.building_r${round}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: `sending_r${round}`, status_at: new Date().toISOString() })
+  });
+  if (!claimed || !claimed.length) return;
+  const lead = claimed[0];
+
+  const done = concepts.filter((c) => c.status === 'done');
+  const failures = concepts.filter((c) => c.status !== 'done').map((c) => `${c.name}: ${c.error || 'failed'}`);
+  if (!done.length) return failRound(lead, round, new Error(failures.join(' | ')));
+
+  try {
+    const feedback = feedbackFor(lead, round);
     const slug = (lead.business_name || `${lead.first_name}-${lead.last_name || ''}`)
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'client';
     const redesignUrl = `${SITE}/redesign.html?id=${lead.id}&t=${lead.redesign_token}`;
-    const conceptList = mockups.map((m) => `<li style="margin-bottom:8px"><b>${esc(m.name)}</b><br><span style="color:#555">${esc(m.direction.idea || '')}</span></li>`).join('');
+    const conceptList = done.map((m) => `<li style="margin-bottom:8px"><b>${esc(m.name)}</b><br><span style="color:#555">${esc(m.direction?.idea || '')}</span></li>`).join('');
 
     await sendEmail({
       to: TEAM_INBOX,
       reply_to: lead.email,
       subject: `🎨 ${round > 1 ? `Round ${round} redesign` : 'New concepts'} — ${lead.business_name || lead.first_name}`,
       html: `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:600px;color:#111">
-        <h2 style="margin:0 0 6px">${round > 1 ? `Round ${round} — redesign ready` : 'New intake — 3 concepts attached'}</h2>
+        <h2 style="margin:0 0 6px">${round > 1 ? `Round ${round} — redesign ready` : `New intake — ${done.length} concepts attached`}</h2>
         ${feedback ? `<p style="background:#fff3ee;border-left:3px solid #FF6B35;padding:10px 12px;font-size:14px"><b>Feedback:</b> ${esc(feedback)}</p>` : ''}
         <ol style="font-size:14px;padding-left:18px">${conceptList}</ol>
         <table style="font-size:13px;line-height:1.6;margin-top:10px">
@@ -200,7 +269,7 @@ export async function runDesignRound(lead, { round = 1, feedback = '', baseDirec
         ${failures.length ? `<p style="font-size:12px;color:#b00">Some concepts failed: ${esc(failures.join(' | '))}</p>` : ''}
         <p style="font-size:11px;color:#999">Submission ${lead.id} · round ${round}</p>
       </div>`,
-      attachments: mockups.map((m) => ({
+      attachments: done.map((m) => ({
         filename: `${slug}-r${round}-${m.key}.html`,
         content: Buffer.from(m.html, 'utf8').toString('base64')
       }))
@@ -209,18 +278,11 @@ export async function runDesignRound(lead, { round = 1, feedback = '', baseDirec
     await updateRow(lead.id, {
       status: failures.length ? `mockups_sent_partial_r${round}` : `mockups_sent_r${round}`,
       round,
-      directions,
-      mockups: mockups.map(({ key, name, direction, html }) => ({ key, name, direction, html })),
+      mockups: done.map(({ key, name, direction, html }) => ({ key, name, direction, html })),
       error: failures.length ? failures.join(' | ') : null,
       mockups_sent_at: new Date().toISOString()
     });
   } catch (err) {
-    console.error('design round failed', err);
-    await updateRow(lead.id, { status: `failed_r${round}`, error: String(err.message || err).slice(0, 2000) }).catch(() => {});
-    await sendEmail({
-      to: TEAM_INBOX,
-      subject: `⚠️ Concept generation failed — ${lead.business_name || lead.email} (round ${round})`,
-      html: `<p>The brief was saved but concepts failed.</p><p>Submission ID: ${lead.id}<br>Client: ${esc(lead.email)}</p><pre>${esc(String(err.message || err))}</pre>`
-    }).catch(() => {});
+    await failRound(lead, round, err);
   }
 }
