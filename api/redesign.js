@@ -1,7 +1,7 @@
 // SoHo Media House — redesign request
 // POST { id, t, base: 'fresh'|'a'|'b'|'c', feedback, inspiration } → new round of 3 concepts emailed to team
 import { waitUntil } from '@vercel/functions';
-import { sb, updateRow, sendEmail, runDesignRound, missingEnv, clean, esc, deliveryDate, REPLY_INBOX } from './_lib/design.js';
+import { sb, updateRow, sendEmail, startDesignRound, missingEnv, clean, esc, deliveryDate, REPLY_INBOX } from './_lib/design.js';
 
 const MAX_ROUNDS = 5; // caps cost per client
 
@@ -23,7 +23,9 @@ export default async function handler(req, res) {
     const rows = await sb(`intake_submissions?select=*&id=eq.${id}&redesign_token=eq.${encodeURIComponent(token)}`, { method: 'GET' });
     const lead = rows && rows[0];
     if (!lead) return res.status(404).json({ error: 'This redesign link is invalid or expired.' });
-    if (/^(generating|redesigning)/.test(lead.status || '')) return res.status(409).json({ error: 'A new round is already being designed — it will arrive shortly.' });
+    const busy = /^(generating|redesigning|directing|building|sending)/.test(lead.status || '');
+    const stale = Date.now() - new Date(lead.status_at || lead.created_at).getTime() > 12 * 60 * 1000;
+    if (busy && !stale) return res.status(409).json({ error: 'A new round is already being designed — it will arrive shortly.' });
     if ((lead.round || 1) >= MAX_ROUNDS) return res.status(429).json({ error: 'You have reached the maximum number of redesign rounds. Please email hello@sohomediahouse.com.' });
 
     const round = (lead.round || 1) + 1;
@@ -46,7 +48,7 @@ export default async function handler(req, res) {
       </div>`
     }).catch((e) => console.error('redesign confirmation failed', e));
 
-    waitUntil(runDesignRound(lead, { round, feedback, baseDirection: baseMockup ? baseMockup.direction : null }));
+    waitUntil(startDesignRound(lead, { round, feedback, baseDirection: baseMockup ? baseMockup.direction : null }));
     return res.status(200).json({ ok: true, round, eta: deliveryDate() });
   } catch (err) {
     console.error('redesign failed', String(err.message || err).replace(/sb_[a-z]+_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9._-]+/g, '[key]'));
