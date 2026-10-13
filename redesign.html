@@ -35,6 +35,48 @@
   .err{color:#ff8a65;font-size:13px;margin:-8px 0 16px;display:none}
   @media(max-width:480px){.opts{grid-template-columns:1fr}}
 </style>
+<style>.soho-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px}.soho-chip{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:999px;padding:4px 12px 4px 4px;font-size:12px;color:rgba(255,255,255,0.75);max-width:100%}.soho-chip img{width:28px;height:28px;object-fit:cover;border-radius:50%;background:#fff}.soho-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}</style>
+<script>(function(){
+  window.SOHO_ASSETS = [];
+  window.SOHO_UPLOADING = 0;
+  function shrink(file){
+    return new Promise(function(resolve, reject){
+      var img = new Image(), url = URL.createObjectURL(file);
+      img.onload = function(){
+        var max = 1600, s = Math.min(1, max / Math.max(img.width, img.height));
+        var c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        var d = c.toDataURL('image/webp', 0.88);
+        if (d.indexOf('data:image/webp') !== 0) d = c.toDataURL('image/png');
+        if (d.length > 4000000) d = c.toDataURL('image/jpeg', 0.85);
+        resolve(d);
+      };
+      img.onerror = function(){ reject(new Error('Could not read ' + file.name)); };
+      img.src = url;
+    });
+  }
+  window.sohoInitUploader = function(inputId, listId){
+    var input = document.getElementById(inputId), list = document.getElementById(listId);
+    input.addEventListener('change', function(){
+      Array.prototype.slice.call(input.files, 0, 12 - SOHO_ASSETS.length).forEach(function(file){
+        var chip = document.createElement('div'); chip.className = 'soho-chip'; chip.textContent = 'Uploading ' + file.name + '…'; list.appendChild(chip);
+        SOHO_UPLOADING++;
+        shrink(file).then(function(dataUrl){
+          return fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataUrl: dataUrl, name: file.name }) })
+            .then(function(r){ return r.json().then(function(d){ if (!r.ok) throw new Error(d.error || 'Upload failed'); return d; }); })
+            .then(function(d){
+              var label = file.name.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim();
+              SOHO_ASSETS.push({ url: d.url, label: label, role: /logo/i.test(label) ? 'logo' : 'other' });
+              chip.innerHTML = '<img src="' + d.url + '" alt=""><span>' + label.replace(/[<>&]/g, '') + '</span>';
+            });
+        }).catch(function(e){ chip.textContent = '⚠️ ' + e.message; chip.style.color = '#ff8a65'; })
+          .then(function(){ SOHO_UPLOADING--; });
+      });
+      input.value = '';
+    });
+  };
+})();
+</script>
 </head>
 <body>
 <main class="wrap">
@@ -54,6 +96,9 @@
       <textarea id="feedback" placeholder="e.g. Make it feel like a playful 90s Saturday-morning cartoon — brighter colors, wobbly hand-drawn shapes, chunkier fun lettering. Less luxury, more giggles."></textarea>
       <label for="inspo">Inspiration (optional)</label>
       <input type="text" id="inspo" placeholder="Shows, brands, or websites you love">
+      <label for="rassets">Brand images (optional)</label>
+      <label for="rassets" style="display:block;border:1.5px dashed var(--line);border-radius:12px;padding:14px 16px;color:var(--muted);font-size:14px;cursor:pointer;margin-bottom:6px">📎 Add characters, a logo, or product photos — name files clearly, e.g. "Junie - star.png"<input id="rassets" type="file" accept="image/png,image/jpeg,image/webp" multiple style="display:none"></label>
+      <div id="rassets-list" class="soho-chips" style="margin-bottom:18px"></div>
       <div class="err" id="err"></div>
       <button id="go">Send to the studio ↻</button>
     </div>
@@ -74,11 +119,12 @@
     var btn = this;
     var feedback = document.getElementById('feedback').value.trim();
     if (feedback.length < 10) { showErr('Tell us a little more about what you would like changed.'); return; }
+    if (window.SOHO_UPLOADING > 0) { showErr('Please wait — your images are still uploading.'); return; }
     err.style.display = 'none';
     btn.disabled = true; btn.textContent = 'Sending...';
     fetch('/api/redesign', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: id, t: t, base: document.querySelector('input[name=base]:checked').value, feedback: feedback, inspiration: document.getElementById('inspo').value.trim() })
+      body: JSON.stringify({ id: id, t: t, base: document.querySelector('input[name=base]:checked').value, feedback: feedback, inspiration: document.getElementById('inspo').value.trim(), assets: window.SOHO_ASSETS || [] })
     }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); })
       .then(function(x){
         if (!x.ok) throw new Error((x.d && x.d.error) || 'Something went wrong.');
@@ -90,5 +136,6 @@
   });
 })();
 </script>
+<script>sohoInitUploader('rassets','rassets-list');</script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 // SoHo Media House — redesign request
 // POST { id, t, base: 'fresh'|'a'|'b'|'c', feedback, inspiration } → new round of 3 concepts emailed to team
 import { waitUntil } from '@vercel/functions';
-import { sb, updateRow, sendEmail, startDesignRound, missingEnv, clean, esc, deliveryDate, REPLY_INBOX } from './_lib/design.js';
+import { sb, updateRow, sendEmail, startDesignRound, missingEnv, clean, esc, deliveryDate, cleanAssets, REPLY_INBOX } from './_lib/design.js';
 
 const MAX_ROUNDS = 5; // caps cost per client
 
@@ -31,9 +31,11 @@ export default async function handler(req, res) {
     const round = (lead.round || 1) + 1;
     const baseMockup = base !== 'fresh' ? (lead.mockups || []).find((m) => m.key === base) : null;
     if (inspiration) lead.inspiration = [lead.inspiration, inspiration].filter(Boolean).join(' · ');
+    const newAssets = cleanAssets(body.assets);
+    if (newAssets.length) lead.assets = cleanAssets([...(lead.assets || []), ...newAssets]);
 
     const revisions = [...(lead.revisions || []), { round, base, feedback, inspiration, at: new Date().toISOString() }];
-    await updateRow(lead.id, { revisions, inspiration: lead.inspiration, status: `redesigning_r${round}` });
+    await updateRow(lead.id, { revisions, inspiration: lead.inspiration, assets: lead.assets || [], status: `redesigning_r${round}` });
 
     await sendEmail({
       to: [lead.email],

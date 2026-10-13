@@ -155,6 +155,48 @@ html,body{height:100%;font-family:'Segoe UI',sans-serif;background:#0a0a0f;color
 @keyframes tp{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(0.75)}}
 .soho-tab-lbl{font-size:9px;letter-spacing:1.5px;color:rgba(255,107,53,0.65);writing-mode:vertical-rl;text-transform:uppercase}
 </style>
+<style>.soho-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px}.soho-chip{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:999px;padding:4px 12px 4px 4px;font-size:12px;color:rgba(255,255,255,0.75);max-width:100%}.soho-chip img{width:28px;height:28px;object-fit:cover;border-radius:50%;background:#fff}.soho-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}</style>
+<script>(function(){
+  window.SOHO_ASSETS = [];
+  window.SOHO_UPLOADING = 0;
+  function shrink(file){
+    return new Promise(function(resolve, reject){
+      var img = new Image(), url = URL.createObjectURL(file);
+      img.onload = function(){
+        var max = 1600, s = Math.min(1, max / Math.max(img.width, img.height));
+        var c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        var d = c.toDataURL('image/webp', 0.88);
+        if (d.indexOf('data:image/webp') !== 0) d = c.toDataURL('image/png');
+        if (d.length > 4000000) d = c.toDataURL('image/jpeg', 0.85);
+        resolve(d);
+      };
+      img.onerror = function(){ reject(new Error('Could not read ' + file.name)); };
+      img.src = url;
+    });
+  }
+  window.sohoInitUploader = function(inputId, listId){
+    var input = document.getElementById(inputId), list = document.getElementById(listId);
+    input.addEventListener('change', function(){
+      Array.prototype.slice.call(input.files, 0, 12 - SOHO_ASSETS.length).forEach(function(file){
+        var chip = document.createElement('div'); chip.className = 'soho-chip'; chip.textContent = 'Uploading ' + file.name + '…'; list.appendChild(chip);
+        SOHO_UPLOADING++;
+        shrink(file).then(function(dataUrl){
+          return fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataUrl: dataUrl, name: file.name }) })
+            .then(function(r){ return r.json().then(function(d){ if (!r.ok) throw new Error(d.error || 'Upload failed'); return d; }); })
+            .then(function(d){
+              var label = file.name.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim();
+              SOHO_ASSETS.push({ url: d.url, label: label, role: /logo/i.test(label) ? 'logo' : 'other' });
+              chip.innerHTML = '<img src="' + d.url + '" alt=""><span>' + label.replace(/[<>&]/g, '') + '</span>';
+            });
+        }).catch(function(e){ chip.textContent = '⚠️ ' + e.message; chip.style.color = '#ff8a65'; })
+          .then(function(){ SOHO_UPLOADING--; });
+      });
+      input.value = '';
+    });
+  };
+})();
+</script>
 </head>
 <body>
 
@@ -437,6 +479,8 @@ html,body{height:100%;font-family:'Segoe UI',sans-serif;background:#0a0a0f;color
           </select>
           <input id="ccolors" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif" placeholder="Brand colors (optional) e.g. navy &amp; gold"/>
           <input id="cinspo" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif" placeholder="Inspiration: brands, shows, or sites you love (optional)"/>
+          <label for="cassets" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif;display:block;cursor:pointer;color:rgba(255,255,255,0.6)">📎 Add brand images (optional) — logo, characters, products. Name files clearly, e.g. "Junie - star.png"<input id="cassets" type="file" accept="image/png,image/jpeg,image/webp" multiple style="display:none"/></label>
+          <div id="cassets-list" class="soho-chips"></div>
           <textarea id="cgoals" rows="4" style="background:#111118;border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:13px 16px;color:#fff;font-size:13px;outline:none;font-family:'Segoe UI',sans-serif;resize:vertical" placeholder="Tell us about your business, who you serve, and what you want your site to do..."></textarea>
           <button class="cta-primary" id="cFormBtn" style="border-radius:10px;width:100%;padding:15px">Send My Project Brief</button>
           <div style="font-size:11px;color:rgba(255,255,255,0.25);text-align:center;letter-spacing:1px">hello@sohomediahouse.com · Clarksville, TN · Nashville, TN</div>
@@ -553,9 +597,10 @@ document.getElementById('cFormBtn').addEventListener('click', function(){
   var payload = {
     first_name: v('cfn'), last_name: v('cln'), business_name: v('cbiz'), email: v('cemail'),
     phone: v('cphone'), current_website: v('cweb'), service: v('csvc'), style: v('cstyle'),
-    brand_colors: v('ccolors'), inspiration: v('cinspo'), goals: v('cgoals'), company_site: v('chp')
+    brand_colors: v('ccolors'), inspiration: v('cinspo'), assets: window.SOHO_ASSETS || [], goals: v('cgoals'), company_site: v('chp')
   };
   if (!payload.first_name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) { alert('Please enter your name and a valid email'); return; }
+  if (window.SOHO_UPLOADING > 0) { alert('Please wait — your images are still uploading.'); return; }
   if (btn.disabled) return;
   btn.disabled = true; var label = btn.textContent; btn.textContent = 'Sending...'; btn.style.opacity = '0.6';
   fetch('/api/intake', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -865,5 +910,6 @@ window.addEventListener('load', function(){
   }
 });
 </script>
+<script>sohoInitUploader('cassets','cassets-list');</script>
 </body>
 </html>
