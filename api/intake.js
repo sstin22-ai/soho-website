@@ -1,7 +1,7 @@
 // SoHo Media House — intake form
 // Submit → save to Supabase → client confirmation → (background) art direction + 3 concepts → emailed to team
 import { waitUntil } from '@vercel/functions';
-import { sb, updateRow, sendEmail, runDesignRound, missingEnv, clean, esc, SUPABASE_KEY, SUPABASE_URL, REPLY_INBOX } from './_lib/design.js';
+import { sb, updateRow, sendEmail, runDesignRound, missingEnv, clean, esc, deliveryDate, SUPABASE_KEY, SUPABASE_URL, REPLY_INBOX } from './_lib/design.js';
 
 const MAX_PER_IP_PER_HOUR = 3;
 const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
         html: `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px;color:#111">
           <h2 style="margin:0 0 12px">Thanks, ${esc(lead.first_name)} — your brief is in.</h2>
           <p style="font-size:15px;line-height:1.7">Our creative team is already building <b>three custom homepage concepts</b> for ${esc(lead.business_name || 'your business')} based on what you shared.</p>
-          <p style="font-size:15px;line-height:1.7">Your concepts and custom proposal will arrive within 24 hours.</p>
+          <p style="font-size:15px;line-height:1.7">Expect your concepts and custom proposal by <b>${deliveryDate()}</b> — within 48 hours. If that lands on a Sunday or federal holiday, it rolls to the next business day.</p>
           <p style="font-size:14px;line-height:1.7;color:#555">Service requested: ${esc(lead.service || 'To be determined')}</p>
           <p style="font-size:15px;margin-top:24px">— The SoHo Media House team<br><a href="https://sohomediahouse.com">sohomediahouse.com</a></p>
         </div>`
