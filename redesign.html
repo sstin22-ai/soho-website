@@ -60,7 +60,7 @@
   </div>
   <div class="msg" id="doneView">
     <h2>It's in the studio.</h2>
-    <p>Your new round of concepts is being designed now. Check your inbox for a confirmation — fresh concepts arrive within 24 hours.</p>
+    <p>Your new round of concepts is being designed now. Check your inbox for a confirmation — fresh concepts arrive <span id="eta">within 48 hours</span>. Sundays and federal holidays roll to the next business day.</p>
   </div>
 </main>
 <script>
@@ -82,6 +82,7 @@
     }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); })
       .then(function(x){
         if (!x.ok) throw new Error((x.d && x.d.error) || 'Something went wrong.');
+        if (x.d && x.d.eta) document.getElementById('eta').textContent = 'by ' + x.d.eta;
         document.getElementById('formView').style.display = 'none';
         document.getElementById('doneView').style.display = 'block';
       })
