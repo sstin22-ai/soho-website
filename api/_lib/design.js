@@ -76,11 +76,12 @@ export async function sendEmail(payload) {
 }
 
 // ---------- Claude ----------
-async function claude({ system, user, maxTokens }) {
+async function claude({ system, user, maxTokens, think = true }) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
+    // Sonnet 5.x thinks by default and that thinking eats the output budget — builds turn it off so every token goes to the page
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }], ...(think ? {} : { thinking: { type: 'disabled' } }) })
   });
   if (!r.ok) throw new Error(`Claude ${r.status}: ${await r.text()}`);
   const data = await r.json();
@@ -150,7 +151,7 @@ Craft requirements:
 ${feedback ? `<client_feedback>${feedback}</client_feedback>` : ''}
 <art_direction>${JSON.stringify(dir)}</art_direction>${lean ? `
 LEAN MODE — your previous attempt ran far too long and was cut off. This time: at most 2 inline SVG illustrations, each with no more than 15 elements; never repeat or loop shapes; no code comments; keep total output under 22 KB. Keep the art direction's palette, fonts, layout idea, and copy quality.` : ''}`;
-  const { text, stop, usage } = await claude({ system, user, maxTokens: lean ? 14000 : 20000 });
+  const { text, stop, usage } = await claude({ system, user, maxTokens: lean ? 14000 : 20000, think: false });
   const html = text.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
   const complete = stop !== 'max_tokens' && /<html[\s>]/i.test(html) && /<\/html>\s*$/i.test(html);
   if (!complete) {
