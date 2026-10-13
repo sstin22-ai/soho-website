@@ -40,6 +40,7 @@ export default async function handler(req, res) {
     return res.status(200).setHeader('Content-Type', 'text/html').send(page('Rebuilding now ↻', `${concept.name} is back in the studio. When it's finished you'll get a fresh email with every completed concept from this round attached — usually 3–5 minutes.`));
   }
 
-  waitUntil(buildConcept(id, round, key).catch((e) => console.error('buildConcept failed', e)));
+  const attempt = parseInt(src.attempt, 10) === 2 ? 2 : 1;
+  waitUntil(buildConcept(id, round, key, attempt).catch((e) => console.error('buildConcept failed', e)));
   return res.status(202).json({ ok: true });
 }
