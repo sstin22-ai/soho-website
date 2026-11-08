@@ -33,6 +33,9 @@ export default async function handler(req, res) {
     assets: cleanAssets(body.assets),
     ip: String(req.headers['x-forwarded-for'] || '').split(',')[0].trim().slice(0, 64)
   };
+  // Affiliate referral: ?ref / /r/<code> sets soho_ref (cookie + localStorage) — only active affiliates count
+  const cookieRef = (String(req.headers.cookie || '').match(/(?:^|;\s*)soho_ref=([a-z0-9]{2,40})/i) || [])[1];
+  const refCode = (clean(body.ref, 40) || cookieRef || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   if (!lead.first_name || !isEmail(lead.email)) {
     return res.status(400).json({ error: 'Please enter your name and a valid email.' });
   }
@@ -47,10 +50,34 @@ export default async function handler(req, res) {
       }
     }
 
+    step = 'REF';
+    let affiliate = null;
+    if (refCode) {
+      try {
+        const found = await sb(`affiliates?select=id,name,email,code&code=eq.${encodeURIComponent(refCode)}&status=eq.active`, { method: 'GET' });
+        affiliate = found && found[0];
+      } catch (e) { console.error('affiliate lookup', e); }
+    }
+    if (affiliate) lead.ref = affiliate.code;
+
     step = 'SAVE';
     const [row] = await sb('intake_submissions', { method: 'POST', body: JSON.stringify(lead) });
     lead.id = row.id;
     lead.redesign_token = row.redesign_token;
+
+    if (affiliate && affiliate.email.toLowerCase() !== lead.email) { // no self-referrals
+      try {
+        await sb('referrals', { method: 'POST', body: JSON.stringify({
+          affiliate_id: affiliate.id, intake_id: lead.id,
+          client_name: `${lead.first_name} ${lead.last_name}`.trim(), business_name: lead.business_name, client_email: lead.email
+        }) });
+        await sendEmail({
+          to: [affiliate.email], reply_to: REPLY_INBOX,
+          subject: `New referral: ${lead.business_name || lead.first_name}`,
+          html: `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px;color:#111"><p>Hi ${esc(affiliate.name.split(' ')[0])},</p><p style="line-height:1.7">Good news — <b>${esc(lead.business_name || lead.first_name)}</b> just sent a project brief through your SoHo Media House link.</p><p style="line-height:1.7">Your <b>$500</b> referral fee is earned once the client pays the <b>$1,000</b> down payment. We'll email you when that happens.</p><p>— SoHo Media House</p></div>`
+        });
+      } catch (e) { console.error('referral create', e); }
+    }
 
     try {
       await sendEmail({
